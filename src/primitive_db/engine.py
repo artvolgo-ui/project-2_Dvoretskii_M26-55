@@ -1,18 +1,43 @@
 import shlex
-from primitive_db.core import create_table, drop_table
-from primitive_db.utils import load_metadata, save_metadata
+
+from prettytable import PrettyTable
+
+from primitive_db.core import create_table, delete, drop_table, insert, select, update
+from primitive_db.parser import parse_set, parse_values, parse_where
+from primitive_db.utils import (
+    load_metadata,
+    load_table_data,
+    save_metadata,
+    save_table_data,
+)
 
 DB_FILE = "db_meta.json"
 
 
 def print_help():
-    print("\n***Процесс работы с таблицей***")
+    print("\n***Операции с данными***")
     print("Функции:")
+    print(
+        "<command> insert into <имя_таблицы> values (<значение1>, <значение2>, ...)"
+        " - создать запись."
+    )
+    print(
+        "<command> select from <имя_таблицы> where <столбец> = <значение>"
+        " - прочитать записи по условию."
+    )
+    print("<command> select from <имя_таблицы> - прочитать все записи.")
+    print(
+        "<command> update <имя_таблицы> set <столбец1> = <новое_значение1>"
+        " where <столбец_условия> = <значение_условия> - обновить запись."
+    )
+    print(
+        "<command> delete from <имя_таблицы> where <столбец> = <значение>"
+        " - удалить запись."
+    )
+    print("<command> info <имя_таблицы> - вывести информацию о таблице.")
     print("<command> create_table <имя_таблицы> <столбец1:тип> .. - создать таблицу")
     print("<command> list_tables - показать список всех таблиц")
     print("<command> drop_table <имя_таблицы> - удалить таблицу")
-
-    print("\nОбщие команды:")
     print("<command> exit - выход из программы")
     print("<command> help - справочная информация\n")
 
@@ -23,7 +48,7 @@ def run():
 
     while True:
         try:
-            user_input = input(">>>Введите команду: ").strip()
+            user_input = input(">>> Введите команду: ").strip()
             if not user_input:
                 continue
 
@@ -33,7 +58,6 @@ def run():
             metadata = load_metadata(DB_FILE)
 
             if command == "exit":
-                print("Выход из программы.")
                 break
             elif command == "help":
                 print_help()
@@ -45,20 +69,103 @@ def run():
                         print(f"- {table_name}")
             elif command == "create_table":
                 if len(args) < 3:
-                    print("Ошибка: Недостаточно аргументов для create_table.")
                     continue
                 table_name = args[1]
                 columns = args[2:]
                 new_metadata = create_table(metadata, table_name, columns)
-                if new_metadata != metadata or table_name in new_metadata:
-                    save_metadata(DB_FILE, new_metadata)
+                save_metadata(DB_FILE, new_metadata)
+                
             elif command == "drop_table":
                 if len(args) < 2:
-                    print("Ошибка: Недостаточно аргументов для drop_table.")
                     continue
                 table_name = args[1]
                 new_metadata = drop_table(metadata, table_name)
                 save_metadata(DB_FILE, new_metadata)
+                
+            elif command == "info":
+                table_name = args[1]
+                if table_name in metadata:
+                    cols = ", ".join(metadata[table_name]["columns"])
+                    data = load_table_data(table_name)
+                    print(f"Таблица: {table_name}")
+                    print(f"Столбцы: {cols}")
+                    print(f"Количество записей: {len(data)}")
+                else:
+                    print(f'Ошибка: Таблицы "{table_name}" не существует.')
+
+            elif command == "insert":
+                try:
+                    table_name = user_input.split("into")[1].split("values")[0].strip()
+                except IndexError:
+                    print("Ошибка: неверный синтаксис insert.")
+                    continue
+
+                start_idx = user_input.find("(")
+                end_idx = user_input.rfind(")")
+                if start_idx == -1 or end_idx == -1:
+                    print("Ошибка: неверный синтаксис insert. Нужны скобки.")
+                    continue
+
+                values_str = user_input[start_idx:end_idx+1]
+                values = parse_values(values_str)
+                
+                
+                table_data = insert(metadata, table_name, values)
+                if table_data:
+                    save_table_data(table_name, table_data)
+
+            elif command == "select" and len(args) >= 3 and args[1] == "from":
+                table_name = args[2]
+                if table_name not in metadata:
+                    print(f'Ошибка: Таблицы "{table_name}" не существует.')
+                    continue
+                
+                where_clause = {}
+                if "where" in user_input:
+                    where_str = user_input.split("where", 1)[1]
+                    where_clause = parse_where(where_str)
+                
+                table_data = load_table_data(table_name)
+                result = select(table_data, where_clause)
+                
+                if not result:
+                    print("Записей не найдено.")
+                else:
+                    pt = PrettyTable()
+                    cols = [c.split(":")[0] for c in metadata[table_name]["columns"]]
+                    pt.field_names = cols
+                    for row in result:
+                        pt.add_row([row.get(c) for c in cols])
+                    print(pt)
+
+            elif command == "update" and len(args) >= 4:
+                table_name = args[1]
+                if "set" not in user_input or "where" not in user_input:
+                    print("Ошибка: Неверный синтаксис update.")
+                    continue
+                
+                set_str = user_input.split("set", 1)[1].split("where")[0]
+                where_str = user_input.split("where", 1)[1]
+                
+                set_clause = parse_set(set_str)
+                where_clause = parse_where(where_str)
+                
+                table_data = load_table_data(table_name)
+                new_data = update(table_data, set_clause, where_clause)
+                save_table_data(table_name, new_data)
+
+            elif command == "delete" and len(args) >= 4 and args[1] == "from":
+                table_name = args[2]
+                if "where" not in user_input:
+                    print("Ошибка: Неверный синтаксис delete.")
+                    continue
+                
+                where_str = user_input.split("where", 1)[1]
+                where_clause = parse_where(where_str)
+                
+                table_data = load_table_data(table_name)
+                new_data = delete(table_data, where_clause)
+                save_table_data(table_name, new_data)
             else:
                 print(f"Функции {command} нет. Попробуйте снова.")
 
