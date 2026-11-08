@@ -2,6 +2,7 @@ import shlex
 
 from prettytable import PrettyTable
 
+from primitive_db.constants import META_FILE
 from primitive_db.core import create_table, delete, drop_table, insert, select, update
 from primitive_db.decorators import create_cacher
 from primitive_db.parser import parse_set, parse_values, parse_where
@@ -12,7 +13,6 @@ from primitive_db.utils import (
     save_table_data,
 )
 
-DB_FILE = "db_meta.json"
 cache = create_cacher()
 
 
@@ -59,7 +59,7 @@ def run():
             args = shlex.split(user_input, posix=False)
             command = args[0].lower()
 
-            metadata = load_metadata(DB_FILE)
+            metadata = load_metadata(META_FILE)
 
             if command == "exit":
                 break
@@ -79,7 +79,7 @@ def run():
                 columns = args[2:]
                 new_metadata = create_table(metadata, table_name, columns)
                 if new_metadata is not None:
-                    save_metadata(DB_FILE, new_metadata)
+                    save_metadata(META_FILE, new_metadata)
                 
             elif command == "drop_table":
                 if len(args) < 2:
@@ -87,7 +87,7 @@ def run():
                 table_name = args[1]
                 new_metadata = drop_table(metadata, table_name)
                 if new_metadata is not None:
-                    save_metadata(DB_FILE, new_metadata)
+                    save_metadata(META_FILE, new_metadata)
                     cache.clear()
                 
             elif command == "info":

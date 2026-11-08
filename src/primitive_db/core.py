@@ -1,3 +1,6 @@
+import os
+
+from primitive_db.constants import DATA_DIR, VALID_TYPES
 from primitive_db.decorators import confirm_action, handle_db_errors, log_time
 from primitive_db.utils import load_table_data
 
@@ -8,7 +11,6 @@ def create_table(metadata: dict, table_name: str, columns: list[str]) -> dict:
     if table_name in metadata:
         raise ValueError(f'Таблица "{table_name}" уже существует.')
 
-    valid_types = {"int", "str", "bool"}
     parsed_columns = []
     
     for col in columns:
@@ -17,7 +19,7 @@ def create_table(metadata: dict, table_name: str, columns: list[str]) -> dict:
         
         col_name, col_type = col.split(":", 1)
         
-        if col_type not in valid_types:
+        if col_type not in VALID_TYPES:
             raise ValueError(f"Некорректное значение: {col}.")
             
         parsed_columns.append(f"{col_name}:{col_type}")
@@ -25,6 +27,10 @@ def create_table(metadata: dict, table_name: str, columns: list[str]) -> dict:
     parsed_columns.insert(0, "ID:int")
     
     metadata[table_name] = {"columns": parsed_columns}
+    
+    table_filepath = f"{DATA_DIR}/{table_name}.json"
+    if os.path.exists(table_filepath):
+        os.remove(table_filepath)
     
     cols_str = ", ".join(parsed_columns)
     print(f'Таблица "{table_name}" успешно создана со столбцами: {cols_str}')
@@ -34,11 +40,16 @@ def create_table(metadata: dict, table_name: str, columns: list[str]) -> dict:
 @handle_db_errors
 @confirm_action("удаление таблицы")
 def drop_table(metadata: dict, table_name: str) -> dict:
-    """Удаляет таблицу из метаданных после подтверждения пользователя."""
+    """Удаляет таблицу из метаданных и стирает её файл данных."""
     if table_name not in metadata:
         raise KeyError(f'Таблица "{table_name}" не существует.')
 
     del metadata[table_name]
+    
+    table_filepath = f"{DATA_DIR}/{table_name}.json"
+    if os.path.exists(table_filepath):
+        os.remove(table_filepath)
+        
     print(f'Таблица "{table_name}" успешно удалена.')
     return metadata
 
