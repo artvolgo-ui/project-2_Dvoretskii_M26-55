@@ -3,6 +3,7 @@ import shlex
 from prettytable import PrettyTable
 
 from primitive_db.core import create_table, delete, drop_table, insert, select, update
+from primitive_db.decorators import create_cacher
 from primitive_db.parser import parse_set, parse_values, parse_where
 from primitive_db.utils import (
     load_metadata,
@@ -12,9 +13,11 @@ from primitive_db.utils import (
 )
 
 DB_FILE = "db_meta.json"
+cache = create_cacher()
 
 
 def print_help():
+    """Выводит справку по всем доступным командам."""
     print("\n***Операции с данными***")
     print("Функции:")
     print(
@@ -43,6 +46,7 @@ def print_help():
 
 
 def run():
+    """Запускает главный цикл приложения для обработки команд пользователя."""
     print("\n***База данных***")
     print_help()
 
@@ -67,20 +71,24 @@ def run():
                 else:
                     for table_name in metadata.keys():
                         print(f"- {table_name}")
+                        
             elif command == "create_table":
                 if len(args) < 3:
                     continue
                 table_name = args[1]
                 columns = args[2:]
                 new_metadata = create_table(metadata, table_name, columns)
-                save_metadata(DB_FILE, new_metadata)
+                if new_metadata is not None:
+                    save_metadata(DB_FILE, new_metadata)
                 
             elif command == "drop_table":
                 if len(args) < 2:
                     continue
                 table_name = args[1]
                 new_metadata = drop_table(metadata, table_name)
-                save_metadata(DB_FILE, new_metadata)
+                if new_metadata is not None:
+                    save_metadata(DB_FILE, new_metadata)
+                    cache.clear()
                 
             elif command == "info":
                 table_name = args[1]
@@ -109,10 +117,11 @@ def run():
                 values_str = user_input[start_idx:end_idx+1]
                 values = parse_values(values_str)
                 
-                
                 table_data = insert(metadata, table_name, values)
-                if table_data:
+                
+                if table_data is not None:
                     save_table_data(table_name, table_data)
+                    cache.clear()
 
             elif command == "select" and len(args) >= 3 and args[1] == "from":
                 table_name = args[2]
@@ -125,8 +134,12 @@ def run():
                     where_str = user_input.split("where", 1)[1]
                     where_clause = parse_where(where_str)
                 
-                table_data = load_table_data(table_name)
-                result = select(table_data, where_clause)
+                cache_key = f"{table_name}_{str(where_clause)}"
+                
+                result = cache(
+                    cache_key, 
+                    lambda: select(load_table_data(table_name), where_clause)
+                )
                 
                 if not result:
                     print("Записей не найдено.")
@@ -152,7 +165,10 @@ def run():
                 
                 table_data = load_table_data(table_name)
                 new_data = update(table_data, set_clause, where_clause)
-                save_table_data(table_name, new_data)
+                
+                if new_data is not None:
+                    save_table_data(table_name, new_data)
+                    cache.clear()
 
             elif command == "delete" and len(args) >= 4 and args[1] == "from":
                 table_name = args[2]
@@ -165,12 +181,14 @@ def run():
                 
                 table_data = load_table_data(table_name)
                 new_data = delete(table_data, where_clause)
-                save_table_data(table_name, new_data)
+                
+                if new_data is not None:
+                    save_table_data(table_name, new_data)
+                    cache.clear()
+                    
             else:
                 print(f"Функции {command} нет. Попробуйте снова.")
 
         except (KeyboardInterrupt, EOFError):
             print("\nВыход...")
             break
-        except Exception as e:
-            print(f"Произошла ошибка: {e}")

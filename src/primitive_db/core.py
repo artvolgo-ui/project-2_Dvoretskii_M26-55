@@ -1,24 +1,24 @@
+from primitive_db.decorators import confirm_action, handle_db_errors, log_time
 from primitive_db.utils import load_table_data
 
 
+@handle_db_errors
 def create_table(metadata: dict, table_name: str, columns: list[str]) -> dict:
+    """Создает новую таблицу в метаданных, проверяя типы и добавляя ID."""
     if table_name in metadata:
-        print(f'Ошибка: Таблица "{table_name}" уже существует.')
-        return metadata
+        raise ValueError(f'Таблица "{table_name}" уже существует.')
 
     valid_types = {"int", "str", "bool"}
     parsed_columns = []
     
     for col in columns:
         if ":" not in col:
-            print(f"Некорректное значение: {col}. Попробуйте снова.")
-            return metadata
+            raise ValueError(f"Некорректное значение: {col}.")
         
         col_name, col_type = col.split(":", 1)
         
         if col_type not in valid_types:
-            print(f"Некорректное значение: {col}. Попробуйте снова.")
-            return metadata
+            raise ValueError(f"Некорректное значение: {col}.")
             
         parsed_columns.append(f"{col_name}:{col_type}")
 
@@ -31,21 +31,24 @@ def create_table(metadata: dict, table_name: str, columns: list[str]) -> dict:
     return metadata
 
 
+@handle_db_errors
+@confirm_action("удаление таблицы")
 def drop_table(metadata: dict, table_name: str) -> dict:
+    """Удаляет таблицу из метаданных после подтверждения пользователя."""
     if table_name not in metadata:
-        print(f'Ошибка: Таблица "{table_name}" не существует.')
-        return metadata
+        raise KeyError(f'Таблица "{table_name}" не существует.')
 
     del metadata[table_name]
     print(f'Таблица "{table_name}" успешно удалена.')
     return metadata
 
 
-
+@handle_db_errors
+@log_time
 def insert(metadata: dict, table_name: str, values: list) -> list:
+    """Добавляет новую запись в таблицу, валидируя типы данных и генерируя ID."""
     if table_name not in metadata:
-        print(f'Ошибка: Таблицы "{table_name}" не существует.')
-        return []
+        raise KeyError(f'Таблицы "{table_name}" не существует.')
 
     table_data = load_table_data(table_name)
     columns = metadata[table_name]["columns"]
@@ -53,9 +56,9 @@ def insert(metadata: dict, table_name: str, values: list) -> list:
     data_columns = columns[1:]
     
     if len(values) != len(data_columns):
-        print(f"Ошибка: Ожидалось {len(data_columns)} значений, "
-              f"получено {len(values)}.")
-        return table_data
+        raise ValueError(
+            f"Ожидалось {len(data_columns)} значений, получено {len(values)}."
+        )
 
     record = {}
     for i, col_def in enumerate(data_columns):
@@ -63,14 +66,11 @@ def insert(metadata: dict, table_name: str, values: list) -> list:
         val = values[i]
         
         if col_type == "int" and not isinstance(val, int):
-            print(f"Ошибка типа: столбец {col_name} ожидает int.")
-            return table_data
+            raise ValueError(f"Столбец {col_name} ожидает int.")
         if col_type == "str" and not isinstance(val, str):
-            print(f"Ошибка типа: столбец {col_name} ожидает str.")
-            return table_data
+            raise ValueError(f"Столбец {col_name} ожидает str.")
         if col_type == "bool" and not isinstance(val, bool):
-            print(f"Ошибка типа: столбец {col_name} ожидает bool.")
-            return table_data
+            raise ValueError(f"Столбец {col_name} ожидает bool.")
             
         record[col_name] = val
 
@@ -85,6 +85,7 @@ def insert(metadata: dict, table_name: str, values: list) -> list:
 
 
 def select(table_data: list, where_clause: dict = None) -> list:
+    """Возвращает записи таблицы, опционально фильтруя их по условию."""
     if not where_clause:
         return table_data
     return [
@@ -93,8 +94,9 @@ def select(table_data: list, where_clause: dict = None) -> list:
     ]
 
 
-
+@handle_db_errors
 def update(table_data: list, set_clause: dict, where_clause: dict) -> list:
+    """Обновляет значения в записях, которые соответствуют условию."""
     updated_count = 0
     for row in table_data:
         if all(row.get(k) == v for k, v in where_clause.items()):
@@ -104,11 +106,14 @@ def update(table_data: list, set_clause: dict, where_clause: dict) -> list:
     if updated_count > 0:
         print("Запись успешно обновлена.")
     else:
-        print("Записей, подходящих под условие, не найдено.")
+        raise ValueError("Записей, подходящих под условие, не найдено.")
     return table_data
 
 
+@handle_db_errors
+@confirm_action("удаление записей")
 def delete(table_data: list, where_clause: dict) -> list:
+    """Удаляет записи, соответствующие условию, после подтверждения."""
     new_data = []
     deleted_count = 0
     for row in table_data:
@@ -119,5 +124,5 @@ def delete(table_data: list, where_clause: dict) -> list:
             new_data.append(row)
             
     if deleted_count == 0:
-        print("Записей, подходящих под условие, не найдено.")
+        raise ValueError("Записей, подходящих под условие, не найдено.")
     return new_data

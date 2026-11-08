@@ -2,6 +2,7 @@ import re
 
 
 def parse_values(values_str: str) -> list:
+    """Парсит строку значений (например, '("Sergei", 28, true)') в список."""
     inner = values_str.strip("()")
     
     raw_values = re.findall(r'"[^"]*"|\S+', inner)
@@ -26,6 +27,7 @@ def parse_values(values_str: str) -> list:
 
 
 def parse_where(where_str: str) -> dict:
+    """Парсит условие (например, 'age = 28') в словарь {'age': 28}."""
     if not where_str:
         return {}
     
@@ -52,6 +54,7 @@ def parse_where(where_str: str) -> dict:
 
 
 def parse_set(set_str: str) -> dict:
+    """Парсит блок SET (например, 'age = 29, name = "Ivan"') в словарь."""
     parts = set_str.split(",")
     result = {}
     for part in parts:
